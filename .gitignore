@@ -1,5 +1,6 @@
 # Project specific files
 volumes/
+.vs/
 
 
 # Byte-compiled / optimized / DLL files
