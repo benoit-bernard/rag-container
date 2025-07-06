@@ -1,0 +1,212 @@
+def _generate_with_source_context(self, question: str, selected_docs: List) -> str:
+    """Génération avec contexte des sources"""
+    
+    # Organiser par type de source
+    sources_by_type = {}
+    for doc_info in selected_docs:
+        source_type = doc_info['source_type']
+        if source_type not in sources_by_type:
+            sources_by_type[source_type] = []
+        sources_by_type[source_type].append(doc_info)
+    
+    # Construire le contexte structuré
+    context_parts = []
+    
+    if 'documentation' in sources_by_type:
+        context_parts.append("📖 DOCUMENTATION OFFICIELLE:")
+        for doc in sources_by_type['documentation']:
+            context_parts.append(f"- {doc['document'].page_content}")
+    
+    if 'freshdesk_resolved' in sources_by_type:
+        context_parts.append("\n🎫 SOLUTIONS SUPPORT ÉPROUVÉES:")
+        for doc in sources_by_type['freshdesk_resolved']:
+            context_parts.append(f"- {doc['document'].page_content}")
+    
+    if 'code' in sources_by_type:
+        context_parts.append("\n💻 CODE SOURCE:")
+        for doc in sources_by_type['code']:
+            context_parts.append(f"- {doc['document'].page_content}")
+    
+    context = "\n".join(context_parts)
+    
+    prompt = f"""Tu es un assistant expert. Réponds à la question en utilisant les sources fournies.
+
+PRIORISE les informations dans cet ordre :
+1. Documentation officielle (autorité maximale)
+2. Solutions support validées (expérience terrain)
+3. Code source (implémentation réelle)
+
+CONTEXTE DISPONIBLE:
+{context}
+
+QUESTION: {question}
+
+INSTRUCTIONS:
+- Cite tes sources en fin de réponse
+- Si plusieurs sources se contredisent, privilégie la documentation officielle
+- Si c'est un problème technique, privilégie les solutions support éprouvées
+- Sois précis et actionnable
+
+RÉPONSE:"""
+
+    return self.llm.invoke(prompt)
+
+
+
+--------------------------------------------------------------------
+
+PRIORITY_ORDER_TECHNICAL = [
+    "freshdesk_resolved",      # Solutions éprouvées
+    "documentation",           # Guide officiel
+    "code",                   # Implémentation réelle
+    "technical_spec"          # Spécifications
+]
+
+
+PRIORITY_ORDER_HOWTO = [
+    "user_manual",            # Manuel utilisateur
+    "documentation",          # Documentation
+    "freshdesk_resolved",     # Exemples réels
+    "code"                   # Exemples code
+]
+
+
+PRIORITY_ORDER_ERROR = [
+    "freshdesk_resolved",     # Solutions connues
+    "code",                  # Gestion d'erreurs
+    "technical_spec",        # Spécifications erreurs
+    "documentation"          # Guide dépannage
+]
+
+
+metadataCode = {
+    'source_type': 'code',
+    'language': 'python',
+    'component': 'authentication',
+    'file_type': 'implementation',   # implementation, test, docs
+    'api_endpoint': '/auth/login',
+    'version': 'latest',
+    'authority': 'canonical'
+}
+
+metadataFreshdesk = {
+    'source_type': 'freshdesk_resolved',
+    'ticket_id': '12345',
+    'category': 'technical_issue',
+    'product': 'AppVision',
+    'resolution_status': 'solved',
+    'satisfaction_score': 5,
+    'resolution_time': 4.25,
+    'keywords': ['connexion', 'authentification'],
+    'agent_expertise': 'senior',
+    'recurrence': 'common',         # common, rare, unique
+    'authority': 'support_validated'
+}
+metadataDocs = {
+    'source_type': 'documentation',
+    'product': 'AppVision',
+    'category': 'user_guide',
+    'language': 'fr',
+    'version': '2.1.4',
+    'authority': 'official',        # official, community, internal
+    'freshness': '2025-01-15',
+    'confidence': 0.95
+}
+
+
+---------------------------------------------------------
+
+def enhanced_ask(self, question: str) -> Dict[str, Any]:
+    """RAG avec priorisation intelligente des sources"""
+    
+    # 1. Classifier l'intention
+    intents = self.source_manager.classify_query_intent(question)
+    primary_intent = max(intents, key=intents.get)
+    
+    # 2. Recherche multi-sources avec scoring pondéré
+    all_results = []
+    
+    # Recherche dans toutes les sources
+    vector_results = self.vectorstore.similarity_search_with_score(
+        question, k=20  # Plus large recherche initiale
+    )
+    
+    # 3. Scoring contextuel par source
+    for doc, base_score in vector_results:
+        source_type = doc.metadata.get('source_type', 'unknown')
+        source_weight = self.SOURCE_WEIGHTS.get(source_type, 0.5)
+        
+        # Bonus selon l'intention
+        intent_bonus = self._calculate_intent_bonus(doc, primary_intent)
+        
+        final_score = base_score * source_weight * intent_bonus
+        
+        all_results.append({
+            'document': doc,
+            'score': final_score,
+            'source_type': source_type,
+            'intent_match': intent_bonus
+        })
+    
+    # 4. Sélection des meilleurs résultats (diversifiés)
+    selected_docs = self._diversified_selection(all_results, top_k=5)
+    
+    # 5. Génération avec contexte source
+    response = self._generate_with_source_context(question, selected_docs)
+    
+    return response
+
+
+---------------------------------------
+
+class SourceManager:
+    """Gestionnaire intelligent des sources documentaires"""
+    
+    SOURCE_WEIGHTS = {
+        # Documentation officielle = référence
+        "documentation": 1.0,
+        "user_manual": 0.95,
+        
+        # Code source = vérité technique
+        "code": 0.9,
+        "technical_spec": 0.85,
+        
+        # Support tickets = expérience terrain
+        "freshdesk_resolved": 0.8,
+        "freshdesk_solution": 0.75,
+        
+        # Documents généraux
+        "pdf_general": 0.7,
+        "markdown": 0.65
+    }
+    
+    def classify_query_intent(self, question: str) -> Dict[str, float]:
+        """Classifier l'intention de la question"""
+        
+        intents = {
+            "technical_issue": 0.0,      # Problème technique
+            "how_to": 0.0,               # Comment faire
+            "feature_info": 0.0,         # Info fonctionnalité  
+            "error_resolution": 0.0,     # Résoudre erreur
+            "api_documentation": 0.0     # Documentation API
+        }
+        
+        question_lower = question.lower()
+        
+        # Mots-clés techniques
+        if any(word in question_lower for word in ["erreur", "error", "bug", "problème", "ne fonctionne pas"]):
+            intents["technical_issue"] = 0.9
+            intents["error_resolution"] = 0.8
+            
+        # Mots-clés procédures
+        if any(word in question_lower for word in ["comment", "how to", "étapes", "procédure"]):
+            intents["how_to"] = 0.9
+            
+        # Mots-clés API/code
+        if any(word in question_lower for word in ["api", "endpoint", "code", "function", "method"]):
+            intents["api_documentation"] = 0.9
+            
+        return intents
+    
+
+    

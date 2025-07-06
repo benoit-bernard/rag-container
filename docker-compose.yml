@@ -1,0 +1,158 @@
+
+services:
+  # ✅ OLLAMA
+  ollama:
+    image: ollama/ollama
+    container_name: rag-ollama
+    restart: unless-stopped
+    ports:
+      - "11434:11434"
+    volumes:
+      - ollama_data:/root/.ollama 
+      #- ./volumes/ollama_data:/root/.ollama
+    env_file: 
+      - .env
+    environment:
+      # ✅ Variables centralisées
+      #- OLLAMA_API=${OLLAMA_API}
+      #- CHUNK_SIZE=${CHUNK_SIZE}
+      #- CHUNK_OVERLAP=${CHUNK_OVERLAP}
+      #- RETRIEVAL_K=${RETRIEVAL_K}
+      #- PERSIST_DIR=${PERSIST_DIR}
+      #- EMBEDDING_MODEL=${EMBEDDING_MODEL}
+      #et avant
+      #- OLLAMA_MODELS=llama3.2:1b  > bug
+      #- OLLAMA_MODEL=${OLLAMA_MODEL}
+      - OLLAMA_FORCE_CPU=false
+      - OLLAMA_HOST=0.0.0.0:11434
+      - OLLAMA_MAX_VRAM=0 
+      - OLLAMA_ORIGINS=*
+      - OLLAMA_KEEP_ALIVE=19m
+      - OLLAMA_LOAD_TIMEOUT=600
+      #- OLLAMA_NUM_PARALLEL=${OLLAMA_NUM_PARALLEL:-1}
+      #- OLLAMA_MAX_LOADED_MODELS=${OLLAMA_MAX_LOADED_MODELS:-1}
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:11434/api/tags"]
+      interval: 60s
+      timeout: 30s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 50G    # Limite mémoire haute
+        reservations:
+          memory: 20G    # Mémoire réservée
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ✅ BACKEND RAG
+  backend:
+    build: ./backend
+    container_name: rag-backend
+    restart: unless-stopped
+    volumes:
+      - ./volumes/shared_data:/app/shared_data
+      - ./volumes/chroma_db:/app/shared_data/chroma_db
+    environment:
+      # Configuration Ollama
+      - OLLAMA_API=${OLLAMA_API:-http://ollama:11434}
+      #- OLLAMA_MODEL=${OLLAMA_MODEL:-llama3.2:1b}
+      - OLLAMA_TIMEOUT=300
+
+      # Configuration RAG
+      - CHUNK_SIZE=${CHUNK_SIZE:-1000}
+      - CHUNK_OVERLAP=${CHUNK_OVERLAP:-200}
+      - RETRIEVAL_K=${RETRIEVAL_K:-5}
+      - PERSIST_DIR=${PERSIST_DIR:-shared_data/chroma_db}
+      - EMBEDDING_MODEL=${EMBEDDING_MODEL:-sentence-transformers/all-MiniLM-L6-v2}
+            
+      # Configuration Python
+      - PYTHONUNBUFFERED=1
+      - PYTHONDONTWRITEBYTECODE=1
+    ports:
+      - "8000:8000"
+    env_file: 
+      - .env
+    depends_on:
+      - ollama
+    networks:
+      - rag-network
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 45s
+      timeout: 20s
+      retries: 8
+      start_period: 180s
+    deploy:
+      resources:
+        limits:
+          memory: 24G      # ✅ Limite mémoire backend
+          cpus: '8.0'     # ✅ Limite CPU
+        reservations:
+          memory: 16G      # ✅ Mémoire réservée
+          cpus: '4.0'     # ✅ CPU réservé
+
+  ui:
+    # ✅ INTERFACE UTILISATEUR
+    build: ./ui
+    container_name: rag-frontend
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    environment:
+      - BACKEND_URL=${BACKEND_URL:-http://backend:8000}
+      - N8N_URL=${N8N_URL:-http://n8n:5678}
+      - OLLAMA_URL=${OLLAMA_API:-http://ollama:11434}  
+    depends_on:
+      - n8n
+      - backend
+    env_file: 
+      - .env
+    networks:
+      - rag-network
+
+  n8n:
+    # ✅ N8N WORKFLOW AUTOMATION
+    image: n8nio/n8n
+    container_name: rag-n8n-automation
+    ports:
+      - "5678:5678"
+    environment:
+      - GENERIC_TIMEZONE=Europe/Paris
+      - N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS=true
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_BASIC_AUTH_ACTIVE=false
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678
+      - N8N_SKIP_WEBHOOK_DEREGISTRATION_SHUTDOWN=true
+      - N8N_WEBHOOK_URL=http://localhost:5678/
+    volumes:
+      - ./volumes/n8n_data:/home/node/.n8n
+      - ./workflow_rag_n8n.json:/tmp/workflow.json:ro
+    restart: always
+    env_file: 
+      - .env
+    depends_on:
+      - ollama
+      - backend
+    networks:
+      - rag-network
+
+networks:
+  rag-network:
+    driver: bridge
+
+# ✅ VolumeS persistant
+volumes:
+  ollama_data:
+    driver: local
+    driver_opts:
+      type: none
+      o: bind
+      device: ./volumes/ollama_data 

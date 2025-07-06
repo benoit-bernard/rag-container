@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test RAG API</title>
+    <style>
+        body { font-family: Arial; margin: 20px; background: #f5f5f5; }
+        .container { max-width: 800px; margin: 0 auto; }
+        .test-card { background: white; margin: 15px 0; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        button { background: #007bff; color: white; border: none; padding: 10px 20px; border-radius: 4px; cursor: pointer; }
+        button:hover { background: #0056b3; }
+        input[type="text"] { width: 100%; padding: 8px; margin: 5px 0; border: 1px solid #ddd; border-radius: 4px; }
+        .result { background: #f8f9fa; border: 1px solid #dee2e6; border-radius: 4px; padding: 10px; margin-top: 10px; white-space: pre-wrap; }
+        .success { border-color: #28a745; background: #d4edda; }
+        .error { border-color: #dc3545; background: #f8d7da; }
+        .status { font-weight: bold; margin-bottom: 10px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🧪 Test API Backend RAG</h1>
+        
+        <!-- Status Services -->
+        <div class="test-card">
+            <h3>📊 Status des Services</h3>
+            <button onclick="checkAllServices()">Vérifier Tous les Services</button>
+            <div id="services-status" class="result"></div>
+        </div>
+        
+        <!-- Health Check -->
+        <div class="test-card">
+            <h3>🔍 Health Check Backend</h3>
+            <button onclick="testHealth()">Test Health</button>
+            <div id="health-result" class="result"></div>
+        </div>
+        
+        <!-- Ask Question -->
+        <div class="test-card">
+            <h3>🤖 Test Question RAG</h3>
+            <input type="text" id="question" placeholder="Tapez votre question ici..." value="Bonjour, peux-tu me répondre?">
+            <button onclick="testAsk()">Envoyer Question</button>
+            <div id="ask-result" class="result"></div>
+        </div>
+        
+        <!-- Reload Index -->
+        <div class="test-card">
+            <h3>🔄 Reload Index</h3>
+            <button onclick="testReload()">Recharger Index</button>
+            <div id="reload-result" class="result"></div>
+        </div>
+        
+        <!-- Logs -->
+        <div class="test-card">
+            <h3>📋 Actions Rapides</h3>
+            <button onclick="openStreamlit()">Ouvrir Interface Streamlit</button>
+            <button onclick="openN8n()">Ouvrir n8n</button>
+            <button onclick="testOllama()">Test Ollama</button>
+        </div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:8000';
+        
+        // Vérifier tous les services
+        async function checkAllServices() {
+            const result = document.getElementById('services-status');
+            result.textContent = 'Vérification en cours...';
+            
+            const services = [
+                { name: 'Backend RAG', url: 'http://localhost:8000/health' },
+                { name: 'Streamlit UI', url: 'http://localhost:8501' },
+                { name: 'n8n', url: 'http://localhost:5678' },
+                { name: 'Ollama', url: 'http://localhost:11434/api/tags' }
+            ];
+            
+            let status = 'Status des Services:\n\n';
+            
+            for (const service of services) {
+                try {
+                    const response = await fetch(service.url, { 
+                        method: 'GET',
+                        mode: 'cors'
+                    });
+                    status += `✅ ${service.name}: OK (${response.status})\n`;
+                } catch (error) {
+                    status += `❌ ${service.name}: Inaccessible\n`;
+                }
+            }
+            
+            result.textContent = status;
+            result.className = 'result';
+        }
+        
+        // Test Health
+        async function testHealth() {
+            const result = document.getElementById('health-result');
+            try {
+                const response = await fetch(`${BASE_URL}/health`);
+                const data = await response.json();
+                
+                result.textContent = `Status: ${response.status}\n\nRéponse:\n${JSON.stringify(data, null, 2)}`;
+                result.className = response.ok ? 'result success' : 'result error';
+            } catch (error) {
+                result.textContent = `Erreur de connexion:\n${error.message}`;
+                result.className = 'result error';
+            }
+        }
+        
+        // Test Ask
+        async function testAsk() {
+            const result = document.getElementById('ask-result');
+            const question = document.getElementById('question').value;
+            
+            if (!question.trim()) {
+                result.textContent = 'Veuillez saisir une question';
+                result.className = 'result error';
+                return;
+            }
+            
+            result.textContent = 'Envoi de la question...';
+            
+            try {
+                const response = await fetch(`${BASE_URL}/ask`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ question: question })
+                });
+                
+                const data = await response.json();
+                
+                if (response.ok) {
+                    result.textContent = `✅ Réponse reçue:\n\n${data.answer}`;
+                    result.className = 'result success';
+                } else {
+                    result.textContent = `❌ Erreur API:\n\n${JSON.stringify(data, null, 2)}`;
+                    result.className = 'result error';
+                }
+            } catch (error) {
+                result.textContent = `❌ Erreur de connexion:\n${error.message}`;
+                result.className = 'result error';
+            }
+        }
+        
+        // Test Reload
+        async function testReload() {
+            const result = document.getElementById('reload-result');
+            result.textContent = 'Rechargement en cours...';
+            
+            try {
+                const response = await fetch(`${BASE_URL}/reload`, {
+                    method: 'POST'
+                });
+                
+                const data = await response.json();
+                
+                result.textContent = `Status: ${response.status}\n\nRéponse:\n${JSON.stringify(data, null, 2)}`;
+                result.className = response.ok ? 'result success' : 'result error';
+            } catch (error) {
+                result.textContent = `Erreur:\n${error.message}`;
+                result.className = 'result error';
+            }
+        }
+        
+        // Test Ollama
+        async function testOllama() {
+            try {
+                const response = await fetch('http://localhost:11434/api/tags');
+                const data = await response.json();
+                alert(`Ollama OK - Modèles: ${data.models?.length || 0}`);
+            } catch (error) {
+                alert(`Ollama inaccessible: ${error.message}`);
+            }
+        }
+        
+        // Ouvrir interfaces
+        function openStreamlit() {
+            window.open('http://localhost:8501', '_blank');
+        }
+        
+        function openN8n() {
+            window.open('http://localhost:5678', '_blank');
+        }
+        
+        // Test automatique au chargement
+        window.onload = function() {
+            setTimeout(checkAllServices, 1000);
+        };
+    </script>
+</body>
+</html>

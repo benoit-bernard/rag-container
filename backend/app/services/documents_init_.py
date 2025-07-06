@@ -1,0 +1,1 @@
+# Empty file to make documents directory a Python package

@@ -1,0 +1,170 @@
+{
+  "nodes": [
+    {
+      "parameters": {
+        "path": "ask",
+        "method": "POST",
+        "responseMode": "lastNode"
+      },
+      "name": "Receive Prompt",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 1,
+      "position": [200, 300]
+    },
+    {
+      "parameters": {
+        "functionCode": "const question = $json[\"question\"] || \"\";\nconst forbiddenPatterns = [\n  /montre.*code/i,\n  /affiche.*code/i,\n  /voir.*code/i,\n  /donne.*code/i,\n  /montre.*fichier/i,\n  /affiche.*fichier/i,\n  /voir.*fichier/i,\n  /donne.*fichier/i,\n  /contenu.*fichier/i,\n  /source.*code/i\n];\n\nfor (const pattern of forbiddenPatterns) {\n  if (pattern.test(question)) {\n    return [{ blocked: true, reason: \"Question interdite : accès au code source.\" }];\n  }\n}\n\nreturn [{ blocked: false, question }];"
+      },
+      "name": "Filtrer Question",
+      "type": "n8n-nodes-base.function",
+      "typeVersion": 1,
+      "position": [400, 300]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "boolean": [
+            {
+              "value1": "={{ $json[\"blocked\"] }}",
+              "value2": true
+            }
+          ]
+        }
+      },
+      "name": "Est Bloqué ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 1,
+      "position": [600, 300]
+    },
+    {
+      "parameters": {
+        "responseData": "{ \"error\": \"❌ Cette question est bloquée car elle demande à voir du code source.\" }",
+        "responseCode": 403
+      },
+      "name": "Réponse Bloquée",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [800, 200]
+    },
+    {
+      "parameters": {
+        "url": "http://backend:8000/ask",
+        "method": "POST",
+        "responseFormat": "json",
+        "jsonParameters": true,
+        "bodyParametersJson": "{ \"question\": \"{{ $json[\\\"question\\\"] }}\" }"
+      },
+      "name": "Appel Backend",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 1,
+      "position": [800, 400]
+    },
+    {
+      "parameters": {
+        "responseData": "{ \"answer\": \"{{ $json[\\\"answer\\\"] }}\" }",
+        "responseCode": 200
+      },
+      "name": "Réponse OK",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1,
+      "position": [1000, 400]
+    },
+    {
+      "parameters": {
+        "fileName": "logs/questions.log",
+        "data": "Question: {{ $json[\"question\"] }}\\nRéponse: {{ $json[\"answer\"] || 'bloquée' }}\\n---\\n",
+        "options": {}
+      },
+      "name": "Logger",
+      "type": "n8n-nodes-base.writeBinaryFile",
+      "typeVersion": 1,
+      "position": [1000, 550]
+    },
+    {
+      "parameters": {
+        "values": {
+          "string": [
+            {
+              "name": "last_question",
+              "value": "={{ $json[\"question\"] }}"
+            },
+            {
+              "name": "last_answer",
+              "value": "={{ $json[\"answer\"] || 'bloquée' }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "name": "Monitoring",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 1,
+      "position": [1000, 700]
+    }
+  ],
+  "connections": {
+    "Receive Prompt": {
+      "main": [
+        [
+          {
+            "node": "Filtrer Question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Filtrer Question": {
+      "main": [
+        [
+          {
+            "node": "Est Bloqué ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Est Bloqué ?": {
+      "main": [
+        [
+          {
+            "node": "Réponse Bloquée",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Appel Backend",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Appel Backend": {
+      "main": [
+        [
+          {
+            "node": "Réponse OK",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Logger",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Monitoring",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "name": "RAG UI → n8n → Backend",
+  "active": true
+}

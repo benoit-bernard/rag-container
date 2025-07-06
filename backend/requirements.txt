@@ -1,0 +1,55 @@
+# FastAPI
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# LangChain - Laisser pip résoudre les versions
+langchain
+langchain-community
+langchain-chroma
+langchain-ollama
+langchain-huggingface
+
+# Documents
+pypdf
+pymupdf
+unstructured[docx]
+unstructured[pptx]
+python-docx
+python-pptx
+
+# Vector DB
+chromadb
+
+# Embeddings
+sentence-transformers
+transformers
+torch
+
+# Monitoring
+psutil
+aiofiles
+
+# http
+requests
+httpx
+
+# python utilities
+python-multipart
+python-dotenv
+
+#compatibility
+numpy
+setuptools
+wheel
+
+#dependencies
+huggingface-hub
+libmagic-dev
+python-magic
+
+# OCR
+#pytesseract
+#opencv-python
+#easyocr
